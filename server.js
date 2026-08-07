@@ -24,7 +24,7 @@ function writeLogs(logs) {
     fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2), 'utf8');
 }
 
-// TARAYICIDAN GIRILDIGINDE HATA VERMESINI ENGELLEYEN ANA ROTA
+// TARAYICIDAN GİRİLDİĞİNDE SİTENİN AÇILMASINI SAĞLAYAN ANA ROTA
 app.get('/', (req, res) => {
     res.send('DHL Backend Sunucusu Aktif ve Calisiyor!');
 });
