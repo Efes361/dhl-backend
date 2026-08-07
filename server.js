@@ -24,6 +24,11 @@ function writeLogs(logs) {
     fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2), 'utf8');
 }
 
+// TARAYICIDAN GIRILDIGINDE HATA VERMESINI ENGELLEYEN ANA ROTA
+app.get('/', (req, res) => {
+    res.send('DHL Backend Sunucusu Aktif ve Calisiyor!');
+});
+
 // Frontend'den gelen log kayitlarini alir
 app.post('/api/log', (req, res) => {
     const { user, location, action } = req.body;
@@ -55,7 +60,7 @@ cron.schedule('30 14 * * *', async () => {
         service: 'gmail',
         auth: {
             user: 'efet7582@gmail.com',
-            pass: 'ncpahjuhsschhogf' // Görseldeki uygulama şifren yerleştirildi!
+            pass: 'ncpahjuhsschhogf'
         }
     });
 
