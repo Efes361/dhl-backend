@@ -24,37 +24,24 @@ function writeLogs(logs) {
     fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2), 'utf8');
 }
 
-// TARAYICIDAN GİRİLDİĞİNDE SİTENİN AÇILMASINI SAĞLAYAN ANA ROTA
-app.get('/', (req, res) => {
-    res.send('DHL Backend Sunucusu Aktif ve Calisiyor!');
-});
+// Logları Excel / CSV formatına dönüştüren yardımcı fonksiyon
+function generateCSV(logs) {
+    const header = "Tarih/Saat,Kullanici,Konum,Islem\n";
+    const rows = logs.map(l => `"${l.timestamp}","${l.user}","${l.location}","${l.action}"`).join("\n");
+    return "\uFEFF" + header + rows; // \uFEFF Excel Türkçe karakter desteği için
+}
 
-// Frontend'den gelen log kayitlarini alir
-app.post('/api/log', (req, res) => {
-    const { user, location, action } = req.body;
-    const logs = readLogs();
-
-    logs.push({
-        timestamp: new Date().toLocaleString('tr-TR'),
-        user: user || 'Bilinmeyen Kullanici',
-        location: location || 'Genel',
-        action: action
-    });
-
-    writeLogs(logs);
-    console.log(`[LOG ALINDI] ${user} -> ${location}: ${action}`);
-    res.status(200).json({ status: 'ok' });
-});
-
-// HER GÜN SAAT 14:30'DA MAİL ATAN OTOMASYON ('30 14 * * *')
-cron.schedule('30 14 * * *', async () => {
-    console.log("Saat 14:30 - Log maili hazirlaniyor...");
+// Mail Gönderme İşlemi
+async function sendLogEmail() {
+    console.log("Log maili hazirlaniyor...");
     const logs = readLogs();
 
     if (logs.length === 0) {
-        console.log("Saat 14:30'a kadar kaydolan log bulunamadi.");
-        return;
+        console.log("Gönderilecek log kaydı bulunamadı.");
+        return { success: false, message: "Gönderilecek log kaydı yok." };
     }
+
+    const csvData = generateCSV(logs);
 
     let transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -67,23 +54,64 @@ cron.schedule('30 14 * * *', async () => {
     let mailOptions = {
         from: '"DHL Depo Log Otomasyonu" <efet7582@gmail.com>',
         to: 'efet7582@gmail.com',
-        subject: `DHL Depo Gunluk Log Raporu (14:30) - ${new Date().toLocaleDateString('tr-TR')}`,
-        text: `Merhaba,\n\nSaat 14:30'a kadar kaydedilen tum kullanici hareketleri ekteki dosyadadir.\n\nToplam Islem Sayisi: ${logs.length}`,
+        subject: `DHL Depo Günlük Log Raporu - ${new Date().toLocaleDateString('tr-TR')}`,
+        text: `Merhaba,\n\nKaydedilen tüm kullanıcı hareketleri Excel (CSV) formatında ekte yer almaktadır.\n\nToplam İşlem Sayısı: ${logs.length}`,
         attachments: [
             {
-                filename: `dhl-log-${new Date().toISOString().split('T')[0]}.json`,
-                content: JSON.stringify(logs, null, 2)
+                filename: `dhl-log-${new Date().toISOString().split('T')[0]}.csv`,
+                content: csvData,
+                contentType: 'text/csv'
             }
         ]
     };
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log('Saat 14:30 log raporu Gmail adresine basariyla gonderildi!');
-        writeLogs([]); // Mail gitti, günlük log sıfırlandı
+        console.log('Log raporu Gmail adresine başarıyla gönderildi!');
+        writeLogs([]); // Mail gidince logları temizle
+        return { success: true, message: "Mail başarıyla gönderildi!" };
     } catch (error) {
-        console.error('Mail gonderme hatasi:', error);
+        console.error('Mail gönderme hatası:', error);
+        throw error;
     }
+}
+
+// ANA ROTA
+app.get('/', (req, res) => {
+    res.send('DHL Backend Sunucusu Aktif ve Çalışıyor!');
+});
+
+// LOG KAYIT ROTASI
+app.post('/api/log', (req, res) => {
+    const { user, location, action } = req.body;
+    const logs = readLogs();
+
+    logs.push({
+        timestamp: new Date().toLocaleString('tr-TR'),
+        user: user || 'Bilinmeyen Kullanıcı',
+        location: location || 'Genel',
+        action: action || 'İşlem Yok'
+    });
+
+    writeLogs(logs);
+    console.log(`[LOG ALINDI] ${user} -> ${location}: ${action}`);
+    res.status(200).json({ status: 'ok' });
+});
+
+// DIŞARIDAN VEYA TEST İÇİN MAIL TETİKLEME ROTASI
+app.get('/api/send-mail', async (req, res) => {
+    try {
+        const result = await sendLogEmail();
+        res.status(200).json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.toString() });
+    }
+});
+
+// SUNUCU İÇİ CRON (Uyumadığı sürece çalışır)
+cron.schedule('30 14 * * *', async () => {
+    console.log("Saat 14:30 - Otomatik mail tetiklendi.");
+    await sendLogEmail();
 });
 
 const PORT = process.env.PORT || 3000;
